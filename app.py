@@ -1,236 +1,124 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from io import BytesIO
+import plotly.express as px
+from datetime import date
 
-# =====================================================
+# ===============================
 # PAGE CONFIG
-# =====================================================
+# ===============================
 
 st.set_page_config(
-    page_title="IFRS 16 Lease Automation",
-    page_icon="📘",
+    page_title="Mahesh Fitness Dashboard",
     layout="wide"
 )
 
-st.title("📘 IFRS 16 Lease Accounting Tool")
-st.markdown("Automated Lease Schedule • Journal Entries • Financial Impact")
+st.title("🏋️ Personal Fitness Tracker")
 
-st.divider()
+# ===============================
+# LOAD DATA
+# ===============================
 
-# =====================================================
-# SIDEBAR INPUTS
-# =====================================================
+DATA_FILE = "fitness_data.csv"
 
-st.sidebar.header("Lease Inputs")
+try:
+    df = pd.read_csv(DATA_FILE)
+except:
+    df = pd.DataFrame(columns=[
+        "Date","Weight","Calories","Protein",
+        "Steps","Sleep","Workout","Mood"
+    ])
 
-lease_payment = st.sidebar.number_input(
-    "Lease Payment",
-    min_value=0.0,
-    value=50000.0
+# ===============================
+# SIDEBAR ENTRY FORM
+# ===============================
+
+st.sidebar.header("➕ Add Daily Entry")
+
+entry_date = st.sidebar.date_input("Date", date.today())
+weight = st.sidebar.number_input("Weight (kg)")
+calories = st.sidebar.number_input("Calories")
+protein = st.sidebar.number_input("Protein (g)")
+steps = st.sidebar.number_input("Steps")
+sleep = st.sidebar.number_input("Sleep (hrs)")
+workout = st.sidebar.selectbox(
+    "Workout",
+    ["Rest","Gym","Cardio","Sports","Yoga"]
 )
+mood = st.sidebar.slider("Mood / Energy",1,10)
 
-discount_rate_input = st.sidebar.number_input(
-    "Discount Rate (%)",
-    min_value=0.0,
-    value=9.0
-)
+if st.sidebar.button("Save Entry"):
 
-lease_term = st.sidebar.number_input(
-    "Lease Term (Years)",
-    min_value=1,
-    value=5
-)
+    new_data = pd.DataFrame([{
+        "Date": entry_date,
+        "Weight": weight,
+        "Calories": calories,
+        "Protein": protein,
+        "Steps": steps,
+        "Sleep": sleep,
+        "Workout": workout,
+        "Mood": mood
+    }])
 
-payment_frequency = st.sidebar.selectbox(
-    "Payment Frequency",
-    ["Annual", "Monthly"]
-)
+    df = pd.concat([df,new_data],ignore_index=True)
+    df.to_csv(DATA_FILE,index=False)
 
-generate = st.sidebar.button("Generate Lease Model")
+    st.sidebar.success("Entry Saved ✅")
 
-# =====================================================
-# CALCULATIONS
-# =====================================================
+# ===============================
+# DATA PREP
+# ===============================
 
-if generate:
+if not df.empty:
+    df["Date"] = pd.to_datetime(df["Date"])
+    df = df.sort_values("Date")
 
-    if payment_frequency == "Monthly":
-        periods = lease_term * 12
-        discount_rate = discount_rate_input / 100 / 12
-    else:
-        periods = lease_term
-        discount_rate = discount_rate_input / 100
+# ===============================
+# KPI SECTION
+# ===============================
 
-    # Present Value Calculation
-    if discount_rate == 0:
-        present_value = lease_payment * periods
-    else:
-        present_value = lease_payment * (1 - (1 + discount_rate) ** (-periods)) / discount_rate
+if not df.empty:
 
-    present_value = round(present_value, 2)
-    depreciation = round(present_value / periods, 2)
+    col1,col2,col3,col4 = st.columns(4)
 
-    opening_liability = present_value
-    opening_rou = present_value
+    col1.metric("Latest Weight",f"{df['Weight'].iloc[-1]} kg")
+    col2.metric("Calories Today",df['Calories'].iloc[-1])
+    col3.metric("Protein Today",f"{df['Protein'].iloc[-1]} g")
+    col4.metric("Steps Today",df['Steps'].iloc[-1])
 
-    lease_schedule = []
-    journal_entries = []
+# ===============================
+# CHARTS
+# ===============================
 
-    # Initial Recognition Entry
-    journal_entries.append({
-        "Period": 0,
-        "Account": "Right of Use Asset",
-        "Debit": present_value,
-        "Credit": 0
-    })
+if not df.empty:
 
-    journal_entries.append({
-        "Period": 0,
-        "Account": "Lease Liability",
-        "Debit": 0,
-        "Credit": present_value
-    })
+    st.subheader("📈 Progress Trends")
 
-    # Loop
-    for period in range(1, int(periods) + 1):
+    tab1,tab2,tab3 = st.tabs(["Weight","Nutrition","Recovery"])
 
-        interest = round(opening_liability * discount_rate, 2)
-        closing_liability = round(opening_liability + interest - lease_payment, 2)
+    with tab1:
+        fig = px.line(df,x="Date",y="Weight",markers=True)
+        st.plotly_chart(fig,use_container_width=True)
 
-        closing_rou = round(opening_rou - depreciation, 2)
+    with tab2:
+        fig = px.line(
+            df,
+            x="Date",
+            y=["Calories","Protein"]
+        )
+        st.plotly_chart(fig,use_container_width=True)
 
-        lease_schedule.append({
-            "Period": period,
-            "Opening Lease Liability": opening_liability,
-            "Interest Expense": interest,
-            "Lease Payment": lease_payment,
-            "Closing Lease Liability": closing_liability,
-            "Opening ROU Asset": opening_rou,
-            "Depreciation": depreciation,
-            "Closing ROU Asset": closing_rou
-        })
+    with tab3:
+        fig = px.line(
+            df,
+            x="Date",
+            y=["Sleep","Mood"]
+        )
+        st.plotly_chart(fig,use_container_width=True)
 
-        # Interest Entry
-        journal_entries.append({
-            "Period": period,
-            "Account": "Interest Expense",
-            "Debit": interest,
-            "Credit": 0
-        })
+# ===============================
+# RAW DATA
+# ===============================
 
-        journal_entries.append({
-            "Period": period,
-            "Account": "Lease Liability",
-            "Debit": 0,
-            "Credit": interest
-        })
+st.subheader("📋 Fitness Log")
 
-        # Payment Entry
-        journal_entries.append({
-            "Period": period,
-            "Account": "Lease Liability",
-            "Debit": lease_payment,
-            "Credit": 0
-        })
-
-        journal_entries.append({
-            "Period": period,
-            "Account": "Bank",
-            "Debit": 0,
-            "Credit": lease_payment
-        })
-
-        # Depreciation Entry
-        journal_entries.append({
-            "Period": period,
-            "Account": "Depreciation Expense",
-            "Debit": depreciation,
-            "Credit": 0
-        })
-
-        journal_entries.append({
-            "Period": period,
-            "Account": "Accumulated Depreciation - ROU",
-            "Debit": 0,
-            "Credit": depreciation
-        })
-
-        opening_liability = closing_liability
-        opening_rou = closing_rou
-
-    df_schedule = pd.DataFrame(lease_schedule)
-    df_journals = pd.DataFrame(journal_entries)
-
-    # =====================================================
-    # KPI SECTION
-    # =====================================================
-
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("Present Value of Lease", f"₹ {present_value:,.2f}")
-    col2.metric("Periodic Depreciation", f"₹ {depreciation:,.2f}")
-    col3.metric("Total Payments", f"₹ {lease_payment * periods:,.2f}")
-
-    st.divider()
-
-    # =====================================================
-    # TABLE DISPLAY
-    # =====================================================
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("Lease Schedule")
-        st.dataframe(df_schedule, use_container_width=True)
-
-    with col2:
-        st.subheader("Journal Entries")
-        st.dataframe(df_journals, use_container_width=True)
-
-    st.divider()
-
-    # =====================================================
-    # CHARTS
-    # =====================================================
-
-    st.subheader("Lease Liability Trend")
-    st.line_chart(df_schedule.set_index("Period")["Closing Lease Liability"])
-
-    st.subheader("ROU Asset Trend")
-    st.line_chart(df_schedule.set_index("Period")["Closing ROU Asset"])
-
-    st.divider()
-
-    # =====================================================
-    # FINANCIAL IMPACT
-    # =====================================================
-
-    st.subheader("Financial Impact (IFRS 16 vs Old Lease Accounting)")
-
-    total_interest = df_schedule["Interest Expense"].sum()
-    total_depreciation = df_schedule["Depreciation"].sum()
-
-    col1, col2 = st.columns(2)
-
-    col1.metric("Total Interest Expense", f"₹ {total_interest:,.2f}")
-    col2.metric("Total Depreciation Expense", f"₹ {total_depreciation:,.2f}")
-
-    st.divider()
-
-    # =====================================================
-    # EXCEL DOWNLOAD
-    # =====================================================
-
-    output = BytesIO()
-
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_schedule.to_excel(writer, sheet_name='Lease Schedule', index=False)
-        df_journals.to_excel(writer, sheet_name='Journal Entries', index=False)
-
-    st.download_button(
-        label="⬇ Download Excel File",
-        data=output.getvalue(),
-        file_name="IFRS16_Lease_Model.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+st.dataframe(df,use_container_width=True)
