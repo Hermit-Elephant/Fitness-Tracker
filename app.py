@@ -1,124 +1,136 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-from datetime import date
 
-# ===============================
-# PAGE CONFIG
-# ===============================
+st.set_page_config(page_title="Fitness Energy Dashboard", layout="wide")
 
-st.set_page_config(
-    page_title="Mahesh Fitness Dashboard",
-    layout="wide"
+st.title("🏋️ Fitness Energy Dashboard")
+
+# ==================================
+# BODY DETAILS
+# ==================================
+
+st.sidebar.header("⚖️ Body Setup")
+
+current_weight = st.sidebar.number_input("Current Weight (kg)", value=70)
+target_weight = st.sidebar.number_input("Target Weight (kg)", value=65)
+
+goal = st.sidebar.selectbox(
+    "Goal",
+    ["Weight Loss", "Maintain", "Muscle Gain"]
 )
 
-st.title("🏋️ Personal Fitness Tracker")
+# ==================================
+# CALORIE REQUIREMENT
+# ==================================
 
-# ===============================
-# LOAD DATA
-# ===============================
+maintenance_calories = current_weight * 30
 
-DATA_FILE = "fitness_data.csv"
+if goal == "Weight Loss":
+    target_calories = maintenance_calories - 500
+elif goal == "Muscle Gain":
+    target_calories = maintenance_calories + 300
+else:
+    target_calories = maintenance_calories
 
-try:
-    df = pd.read_csv(DATA_FILE)
-except:
-    df = pd.DataFrame(columns=[
-        "Date","Weight","Calories","Protein",
-        "Steps","Sleep","Workout","Mood"
-    ])
+# ==================================
+# FOOD DATABASE (AUTO NUTRIENTS)
+# ==================================
 
-# ===============================
-# SIDEBAR ENTRY FORM
-# ===============================
+food_db = pd.DataFrame({
+    "Food":[
+        "Whole Egg",
+        "Egg White",
+        "Rice (1 cup)",
+        "Roti",
+        "Chicken Curry 100g",
+        "Dal (1 bowl)",
+        "Banana",
+        "Grapes 100g",
+        "Whey Protein",
+        "Peanut Butter 1 tbsp",
+        "Milk 250ml"
+    ],
+    "Calories":[70,17,200,120,220,180,100,70,120,95,150],
+    "Protein":[6,4,4,3,28,9,1,1,24,4,8],
+    "Carbs":[1,0,45,20,5,25,27,18,3,3,12],
+    "Fat":[5,0,0,2,10,3,0,0,1,8,8]
+})
 
-st.sidebar.header("➕ Add Daily Entry")
+# ==================================
+# SESSION STATE STORAGE
+# ==================================
 
-entry_date = st.sidebar.date_input("Date", date.today())
-weight = st.sidebar.number_input("Weight (kg)")
-calories = st.sidebar.number_input("Calories")
-protein = st.sidebar.number_input("Protein (g)")
-steps = st.sidebar.number_input("Steps")
-sleep = st.sidebar.number_input("Sleep (hrs)")
-workout = st.sidebar.selectbox(
-    "Workout",
-    ["Rest","Gym","Cardio","Sports","Yoga"]
-)
-mood = st.sidebar.slider("Mood / Energy",1,10)
+if "food_log" not in st.session_state:
+    st.session_state.food_log = pd.DataFrame(
+        columns=["Food","Qty","Calories","Protein","Carbs","Fat"]
+    )
 
-if st.sidebar.button("Save Entry"):
+# ==================================
+# FOOD ENTRY
+# ==================================
 
-    new_data = pd.DataFrame([{
-        "Date": entry_date,
-        "Weight": weight,
-        "Calories": calories,
-        "Protein": protein,
-        "Steps": steps,
-        "Sleep": sleep,
-        "Workout": workout,
-        "Mood": mood
-    }])
+st.sidebar.header("🍽 Add Food")
 
-    df = pd.concat([df,new_data],ignore_index=True)
-    df.to_csv(DATA_FILE,index=False)
+food_selected = st.sidebar.selectbox("Select Food", food_db["Food"])
+quantity = st.sidebar.number_input("Quantity", 1)
 
-    st.sidebar.success("Entry Saved ✅")
+if st.sidebar.button("Add Food"):
 
-# ===============================
-# DATA PREP
-# ===============================
+    food_row = food_db[food_db["Food"] == food_selected]
 
-if not df.empty:
-    df["Date"] = pd.to_datetime(df["Date"])
-    df = df.sort_values("Date")
+    new_entry = {
+        "Food": food_selected,
+        "Qty": quantity,
+        "Calories": food_row["Calories"].values[0] * quantity,
+        "Protein": food_row["Protein"].values[0] * quantity,
+        "Carbs": food_row["Carbs"].values[0] * quantity,
+        "Fat": food_row["Fat"].values[0] * quantity,
+    }
 
-# ===============================
-# KPI SECTION
-# ===============================
+    st.session_state.food_log = pd.concat(
+        [st.session_state.food_log, pd.DataFrame([new_entry])],
+        ignore_index=True
+    )
 
-if not df.empty:
+# ==================================
+# TOTAL NUTRIENTS
+# ==================================
 
-    col1,col2,col3,col4 = st.columns(4)
+log = st.session_state.food_log
 
-    col1.metric("Latest Weight",f"{df['Weight'].iloc[-1]} kg")
-    col2.metric("Calories Today",df['Calories'].iloc[-1])
-    col3.metric("Protein Today",f"{df['Protein'].iloc[-1]} g")
-    col4.metric("Steps Today",df['Steps'].iloc[-1])
+total_calories = log["Calories"].sum()
+total_protein = log["Protein"].sum()
+total_carbs = log["Carbs"].sum()
+total_fat = log["Fat"].sum()
 
-# ===============================
-# CHARTS
-# ===============================
+remaining = target_calories - total_calories
 
-if not df.empty:
+# ==================================
+# DASHBOARD METRICS
+# ==================================
 
-    st.subheader("📈 Progress Trends")
+col1, col2, col3, col4 = st.columns(4)
 
-    tab1,tab2,tab3 = st.tabs(["Weight","Nutrition","Recovery"])
+col1.metric("🔥 Target Calories", int(target_calories))
+col2.metric("🍽 Calories Consumed", int(total_calories))
+col3.metric("⚖️ Calories Remaining", int(remaining))
+col4.metric("💪 Protein Intake", f"{int(total_protein)} g")
 
-    with tab1:
-        fig = px.line(df,x="Date",y="Weight",markers=True)
-        st.plotly_chart(fig,use_container_width=True)
+# ==================================
+# NUTRIENT BREAKDOWN
+# ==================================
 
-    with tab2:
-        fig = px.line(
-            df,
-            x="Date",
-            y=["Calories","Protein"]
-        )
-        st.plotly_chart(fig,use_container_width=True)
+st.subheader("🥗 Nutrient Breakdown")
 
-    with tab3:
-        fig = px.line(
-            df,
-            x="Date",
-            y=["Sleep","Mood"]
-        )
-        st.plotly_chart(fig,use_container_width=True)
+c1, c2, c3 = st.columns(3)
 
-# ===============================
-# RAW DATA
-# ===============================
+c1.metric("Protein", f"{int(total_protein)} g")
+c2.metric("Carbs", f"{int(total_carbs)} g")
+c3.metric("Fat", f"{int(total_fat)} g")
 
-st.subheader("📋 Fitness Log")
+# ==================================
+# FOOD LOG TABLE
+# ==================================
 
-st.dataframe(df,use_container_width=True)
+st.subheader("📋 Today's Food Log")
+st.dataframe(log, use_container_width=True)
